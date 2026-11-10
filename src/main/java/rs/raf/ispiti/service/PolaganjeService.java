@@ -3,7 +3,9 @@ package rs.raf.ispiti.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 import rs.raf.ispiti.common.ApiException;
+import rs.raf.ispiti.common.FileStorage;
 import rs.raf.ispiti.model.*;
 import rs.raf.ispiti.repository.KorisnikRepository;
 import rs.raf.ispiti.repository.PrijavaRepository;
@@ -23,6 +25,7 @@ public class PolaganjeService {
     private final PrijavaRepository prijavaRepository;
     private final ZadatakRepository zadatakRepository;
     private final ResenjeRepository resenjeRepository;
+    private final FileStorage fileStorage;
 
     public List<PrijavaDto> mojePrijave(Long studentId) {
         return prijavaRepository.findAllByStudentIdOrderByTerminPocetakDesc(studentId).stream()
@@ -85,6 +88,25 @@ public class PolaganjeService {
             resenjeRepository.save(r);
         }
         return zadatak;
+    }
+
+    @Transactional
+    public ResenjeDto predaj(Long studentId, Long zadatakId, MultipartFile fajl) {
+        Resenje resenje = resenjeRepository.findByStudentIdAndZadatakId(studentId, zadatakId)
+                .orElseThrow(() -> ApiException.losZahtev("Prvo preuzmite zadatak, pa ga onda predajte"));
+        Termin termin = resenje.getZadatak().getGrupa().getTermin();
+        LocalDateTime sada = LocalDateTime.now();
+        if (sada.isAfter(termin.getKraj())) {
+            throw ApiException.zabranjeno("Termin je istekao u " + termin.getKraj() + ", predaja vise nije moguca");
+        }
+
+        String staraPutanja = resenje.getPutanjaFajla();
+        resenje.setPutanjaFajla(fileStorage.sacuvaj(fajl, "resenja"));
+        resenje.setNazivFajla(fajl.getOriginalFilename());
+        resenje.setPredato(sada);
+        Resenje sacuvano = resenjeRepository.save(resenje);
+        fileStorage.obrisi(staraPutanja);
+        return ResenjeDto.od(sacuvano);
     }
 
     private static String normalizuj(String indeks) {
