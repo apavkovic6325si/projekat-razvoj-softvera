@@ -7,6 +7,7 @@ import org.springframework.web.multipart.MultipartFile;
 import rs.raf.ispiti.common.ApiException;
 import rs.raf.ispiti.common.FileStorage;
 import rs.raf.ispiti.model.*;
+import rs.raf.ispiti.repository.KomentarRepository;
 import rs.raf.ispiti.repository.KorisnikRepository;
 import rs.raf.ispiti.repository.PrijavaRepository;
 import rs.raf.ispiti.repository.ResenjeRepository;
@@ -25,6 +26,7 @@ public class PolaganjeService {
     private final PrijavaRepository prijavaRepository;
     private final ZadatakRepository zadatakRepository;
     private final ResenjeRepository resenjeRepository;
+    private final KomentarRepository komentarRepository;
     private final FileStorage fileStorage;
 
     public List<PrijavaDto> mojePrijave(Long studentId) {
@@ -58,11 +60,12 @@ public class PolaganjeService {
         PolaganjeInfo.Stanje stanje = sada.isBefore(termin.getPocetak()) ? PolaganjeInfo.Stanje.NIJE_POCEO
                 : sada.isAfter(termin.getKraj()) ? PolaganjeInfo.Stanje.ZAVRSEN : PolaganjeInfo.Stanje.U_TOKU;
         long preostalo = Math.max(0, Duration.between(sada, termin.getKraj()).toSeconds());
+        boolean prikaziZadatak = zadatak != null && stanje != PolaganjeInfo.Stanje.NIJE_POCEO;
 
         return new PolaganjeInfo(TerminDto.od(termin), GrupaDto.od(prijava.getGrupa()),
                 zadatak == null ? null : zadatak.getId(),
-                zadatak == null ? null : zadatak.getNaziv(),
-                zadatak == null ? null : zadatak.getOpis(),
+                prikaziZadatak ? zadatak.getNaziv() : null,
+                prikaziZadatak ? zadatak.getOpis() : null,
                 stanje, sada, preostalo,
                 resenje == null ? null : resenje.getPreuzeto(),
                 resenje == null ? null : resenje.getPredato());
@@ -104,6 +107,8 @@ public class PolaganjeService {
         resenje.setPutanjaFajla(fileStorage.sacuvaj(fajl, "resenja"));
         resenje.setNazivFajla(fajl.getOriginalFilename());
         resenje.setPredato(sada);
+        resenje.setPoeni(null);
+        komentarRepository.deleteAllByResenjeId(resenje.getId());
         Resenje sacuvano = resenjeRepository.save(resenje);
         fileStorage.obrisi(staraPutanja);
         return ResenjeDto.od(sacuvano);

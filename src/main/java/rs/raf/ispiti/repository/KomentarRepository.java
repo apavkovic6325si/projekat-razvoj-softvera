@@ -8,4 +8,6 @@ import java.util.List;
 public interface KomentarRepository extends JpaRepository<Komentar, Long> {
 
     List<Komentar> findAllByResenjeIdOrderByFajlAscLinijaAsc(Long resenjeId);
+
+    void deleteAllByResenjeId(Long resenjeId);
 }

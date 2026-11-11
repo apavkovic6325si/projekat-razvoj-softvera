@@ -15,6 +15,8 @@ public interface ResenjeRepository extends JpaRepository<Resenje, Long> {
 
     List<Resenje> findAllByStudentIdOrderByPreuzetoDesc(Long studentId);
 
+    boolean existsByStudentIdAndZadatakGrupaTerminId(Long studentId, Long terminId);
+
     @Query("""
             select r from Resenje r
             join r.zadatak z join z.grupa g join g.termin t

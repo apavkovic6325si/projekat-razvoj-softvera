@@ -32,9 +32,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "app.seed.enabled=false",
         "app.storage.dir=target/test-fajlovi"
 })
-
 @AutoConfigureMockMvc
 class TokPolaganjaTest {
+
     @Autowired MockMvc mvc;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired KorisnikRepository korisnici;
@@ -244,6 +244,71 @@ class TokPolaganjaTest {
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
+    @Test
+    void ponovnaPredajaBriseStarePoeneIKomentare() throws Exception {
+        Resenje r = preuzeto(ana, zadatak(grupa1));
+        r.setPredato(LocalDateTime.now().minusMinutes(5));
+        r.setPoeni(50);
+        resenja.save(r);
+        Komentar k = new Komentar();
+        k.setResenje(r);
+        k.setNastavnik(nastavnik);
+        k.setFajl("src/Main.java");
+        k.setLinija(1);
+        k.setTekst("Stari komentar");
+        k.setKreiran(LocalDateTime.now());
+        komentari.save(k);
+
+        mvc.perform(multipart("/api/student/polaganje/predaja")
+                        .file(zip("fajl", "nova-verzija.zip"))
+                        .param("zadatakId", r.getZadatak().getId().toString())
+                        .header("Authorization", login("ana@raf.rs")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.poeni").doesNotExist());
+        assertThat(komentari.findAllByResenjeIdOrderByFajlAscLinijaAsc(r.getId())).isEmpty();
+    }
+
+    @Test
+    void poslePreuzimanjaPrijavaNeMozeDaSePremestiNiObrise() throws Exception {
+        preuzeto(ana, zadatak(grupa1));
+        String tNastavnik = login("nastavnik@raf.rs");
+
+        mvc.perform(post("/api/nastavnik/termini/{id}/prijave", termin.getId()).header("Authorization", tNastavnik)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"stavke\": [{\"brojIndeksa\": \"RN 1/2024\", \"grupaId\": %d}]}"
+                                .formatted(grupa2.getId())))
+                .andExpect(status().isBadRequest());
+        Long prijavaId = prijave.findByStudentIdAndTerminId(ana.getId(), termin.getId()).orElseThrow().getId();
+        mvc.perform(delete("/api/nastavnik/prijave/{id}", prijavaId).header("Authorization", tNastavnik))
+                .andExpect(status().isConflict());
+        assertThat(prijave.findById(prijavaId).orElseThrow().getGrupa().getId()).isEqualTo(grupa1.getId());
+    }
+
+    @Test
+    void opisZadatkaSeNeVidiPrePocetkaTermina() throws Exception {
+        Termin buduci = termin(LocalDateTime.now().plusDays(1), LocalDateTime.now().plusDays(1).plusHours(2));
+        Grupa g = grupa(buduci, "Grupa 1");
+        zadatak(g);
+        prijava(ana, buduci, g);
+
+        mvc.perform(post("/api/student/polaganje/provera").header("Authorization", login("ana@raf.rs"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"terminId\": %d, \"grupaId\": %d, \"brojIndeksa\": \"RN 1/2024\"}"
+                                .formatted(buduci.getId(), g.getId())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.stanje").value("NIJE_POCEO"))
+                .andExpect(jsonPath("$.nazivZadatka").doesNotExist())
+                .andExpect(jsonPath("$.opisZadatka").doesNotExist());
+    }
+
+    private Resenje preuzeto(Korisnik student, Zadatak z) {
+        Resenje r = new Resenje();
+        r.setStudent(student);
+        r.setZadatak(z);
+        r.setPreuzeto(LocalDateTime.now().minusMinutes(10));
+        return resenja.save(r);
+    }
+
     private String login(String email) throws Exception {
         String odgovor = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\": \"%s\", \"lozinka\": \"lozinka123\"}".formatted(email)))
@@ -301,6 +366,7 @@ class TokPolaganjaTest {
         Zadatak z = new Zadatak();
         z.setGrupa(g);
         z.setNaziv("Zadatak");
+        z.setOpis("Tajna postavka");
         z.setNastavnik(nastavnik);
         z.setNazivFajla("zadatak.zip");
         z.setPutanjaFajla("zadaci/ne-postoji.zip");
