@@ -169,7 +169,7 @@ class TokPolaganjaTest {
         mvc.perform(post("/api/student/polaganje/provera").header("Authorization", tMarko)
                         .contentType(MediaType.APPLICATION_JSON).content(polaganje))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.detail").value("Niste na spisku za polaganje u ovom terminu"));
+                .andExpect(jsonPath("$.detail").value("Niste na spisku za polaganje u ovom terminu!"));
         mvc.perform(post("/api/student/polaganje/preuzimanje").header("Authorization", tMarko)
                         .contentType(MediaType.APPLICATION_JSON).content(polaganje))
                 .andExpect(status().isForbidden());
