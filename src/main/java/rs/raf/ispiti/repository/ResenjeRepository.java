@@ -8,13 +8,10 @@ import java.util.List;
 import java.util.Optional;
 
 public interface ResenjeRepository extends JpaRepository<Resenje, Long> {
-
     Optional<Resenje> findByStudentIdAndZadatakId(Long studentId, Long zadatakId);
-
     List<Resenje> findAllByZadatakGrupaTerminId(Long terminId);
-
     List<Resenje> findAllByStudentIdOrderByPreuzetoDesc(Long studentId);
-
+    boolean existsByZadatakId(Long zadatakId);
     boolean existsByStudentIdAndZadatakGrupaTerminId(Long studentId, Long terminId);
 
     @Query("""
@@ -28,6 +25,5 @@ public interface ResenjeRepository extends JpaRepository<Resenje, Long> {
               and (:brojIndeksa is null or r.student.brojIndeksa = :brojIndeksa)
             order by t.pocetak, g.naziv, r.student.prezime, r.student.ime
             """)
-    List<Resenje> pretraga(Long predmetId, Long rokId, Long terminId, Long grupaId,
-                           String ucionica, String brojIndeksa);
+    List<Resenje> pretraga(Long predmetId, Long rokId, Long terminId, Long grupaId, String ucionica, String brojIndeksa);
 }

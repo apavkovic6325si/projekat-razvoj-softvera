@@ -10,6 +10,8 @@ import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import rs.raf.ispiti.common.ApiException;
+import rs.raf.ispiti.common.FileStorage;
 import rs.raf.ispiti.model.*;
 import rs.raf.ispiti.repository.*;
 
@@ -20,6 +22,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -34,7 +37,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 })
 @AutoConfigureMockMvc
 class TokPolaganjaTest {
-
     @Autowired MockMvc mvc;
     @Autowired PasswordEncoder passwordEncoder;
     @Autowired KorisnikRepository korisnici;
@@ -46,6 +48,7 @@ class TokPolaganjaTest {
     @Autowired PrijavaRepository prijave;
     @Autowired ResenjeRepository resenja;
     @Autowired KomentarRepository komentari;
+    @Autowired FileStorage fileStorage;
 
     Korisnik nastavnik;
     Korisnik ana;
@@ -299,6 +302,50 @@ class TokPolaganjaTest {
                 .andExpect(jsonPath("$.stanje").value("NIJE_POCEO"))
                 .andExpect(jsonPath("$.nazivZadatka").doesNotExist())
                 .andExpect(jsonPath("$.opisZadatka").doesNotExist());
+    }
+
+    @Test
+    void preuzetZadatakNeMozeDaSeZameni() throws Exception {
+        preuzeto(ana, zadatak(grupa1));
+        mvc.perform(multipart("/api/nastavnik/grupe/{id}/zadatak", grupa1.getId())
+                        .file(zip("fajl", "nova-verzija.zip"))
+                        .param("naziv", "Izmenjen")
+                        .header("Authorization", login("nastavnik@raf.rs")))
+                .andExpect(status().isConflict());
+        assertThat(zadaci.findByGrupaId(grupa1.getId()).orElseThrow().getNaziv()).isEqualTo("Zadatak");
+    }
+
+    @Test
+    void lazanZipJeOdbijen() throws Exception {
+        Zadatak z = zadatak(grupa1);
+        preuzeto(ana, z);
+        MockMultipartFile lazan = new MockMultipartFile("fajl", "resenje.zip", "application/zip", new byte[]{'P', 'K', 0, 0});
+        mvc.perform(multipart("/api/student/polaganje/predaja")
+                        .file(lazan)
+                        .param("zadatakId", z.getId().toString())
+                        .header("Authorization", login("ana@raf.rs")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("Fajl nije ispravna .zip arhiva"));
+    }
+
+    @Test
+    void ponovnaPredajaBriseStariFajlPosleUspesnogUpisa() throws Exception {
+        Zadatak z = zadatak(grupa1);
+        Resenje r = preuzeto(ana, z);
+        String tAna = login("ana@raf.rs");
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(multipart("/api/student/polaganje/predaja")
+                            .file(zip("fajl", "resenje.zip"))
+                            .param("zadatakId", z.getId().toString())
+                            .header("Authorization", tAna))
+                    .andExpect(status().isOk());
+            if (i == 0) r = resenja.findById(r.getId()).orElseThrow();
+        }
+        String prva = r.getPutanjaFajla();
+        String druga = resenja.findById(r.getId()).orElseThrow().getPutanjaFajla();
+        assertThat(druga).isNotEqualTo(prva);
+        assertThat(fileStorage.ucitaj(druga).exists()).isTrue();
+        assertThatThrownBy(() -> fileStorage.ucitaj(prva)).isInstanceOf(ApiException.class);
     }
 
     private Resenje preuzeto(Korisnik student, Zadatak z) {

@@ -9,6 +9,7 @@ import rs.raf.ispiti.common.FileStorage;
 import rs.raf.ispiti.model.Grupa;
 import rs.raf.ispiti.model.Zadatak;
 import rs.raf.ispiti.repository.KorisnikRepository;
+import rs.raf.ispiti.repository.ResenjeRepository;
 import rs.raf.ispiti.repository.ZadatakRepository;
 import rs.raf.ispiti.web.dto.ZadatakDto;
 
@@ -20,6 +21,7 @@ import java.util.List;
 public class ZadatakService {
     private final ZadatakRepository zadatakRepository;
     private final KorisnikRepository korisnikRepository;
+    private final ResenjeRepository resenjeRepository;
     private final NastavaService nastavaService;
     private final FileStorage fileStorage;
 
@@ -29,10 +31,13 @@ public class ZadatakService {
             throw ApiException.losZahtev("Naziv zadatka je obavezan!");
         }
         Grupa grupa = nastavaService.grupa(grupaId);
-        String putanja = fileStorage.sacuvaj(fajl, "zadaci");
-
         Zadatak z = zadatakRepository.findByGrupaId(grupaId).orElseGet(Zadatak::new);
-        String staraPutanja = z.getPutanjaFajla();
+        if (z.getId() != null && resenjeRepository.existsByZadatakId(z.getId())) {
+            throw ApiException.konflikt("Zadatak su studenti već preuzeli i više ne moze da se zameni!");
+        }
+        String putanja = fileStorage.sacuvaj(fajl, "zadaci");
+        fileStorage.zameniPosleTransakcije(putanja, z.getPutanjaFajla());
+
         z.setGrupa(grupa);
         z.setNaziv(naziv.trim());
         z.setOpis(opis);
@@ -40,9 +45,7 @@ public class ZadatakService {
         z.setNazivFajla(fajl.getOriginalFilename());
         z.setPutanjaFajla(putanja);
         z.setPostavljen(LocalDateTime.now());
-        Zadatak sacuvan = zadatakRepository.save(z);
-        fileStorage.obrisi(staraPutanja);
-        return ZadatakDto.od(sacuvan);
+        return ZadatakDto.od(zadatakRepository.save(z));
     }
 
     public List<ZadatakDto> zaTermin(Long terminId) {

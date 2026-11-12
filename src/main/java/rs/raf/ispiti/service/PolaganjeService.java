@@ -21,7 +21,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class PolaganjeService {
-
     private final KorisnikRepository korisnikRepository;
     private final PrijavaRepository prijavaRepository;
     private final ZadatakRepository zadatakRepository;
@@ -30,18 +29,16 @@ public class PolaganjeService {
     private final FileStorage fileStorage;
 
     public List<PrijavaDto> mojePrijave(Long studentId) {
-        return prijavaRepository.findAllByStudentIdOrderByTerminPocetakDesc(studentId).stream()
-                .map(PrijavaDto::od).toList();
+        return prijavaRepository.findAllByStudentIdOrderByTerminPocetakDesc(studentId).stream().map(PrijavaDto::od).toList();
     }
 
     public Prijava proveriPravo(Long studentId, PolaganjeZahtev z) {
-        Korisnik student = korisnikRepository.findById(studentId)
-                .orElseThrow(() -> ApiException.nijePronadjeno("Korisnik vise ne postoji"));
+        Korisnik student = korisnikRepository.findById(studentId).orElseThrow(() -> ApiException.nijePronadjeno("Korisnik više ne postoji!"));
         if (student.getBrojIndeksa() == null || !normalizuj(student.getBrojIndeksa()).equals(normalizuj(z.brojIndeksa()))) {
-            throw ApiException.zabranjeno("Uneti broj indeksa se ne poklapa sa prijavljenim nalogom");
+            throw ApiException.zabranjeno("Uneti broj indeksa se ne poklapa sa prijavljenim nalogom!");
         }
         Prijava prijava = prijavaRepository.findByStudentIdAndTerminId(studentId, z.terminId())
-                .orElseThrow(() -> ApiException.zabranjeno("Niste na spisku za polaganje u ovom terminu"));
+                .orElseThrow(() -> ApiException.zabranjeno("Niste na spisku za polaganje u ovom terminu!"));
         if (!prijava.getGrupa().getId().equals(z.grupaId())) {
             throw ApiException.zabranjeno("Na spisku ste za grupu \"" + prijava.getGrupa().getNaziv()
                     + "\", a ne za izabranu grupu");
@@ -80,8 +77,7 @@ public class PolaganjeService {
             throw ApiException.zabranjeno("Zadatak moze da se preuzme samo u toku termina (od "
                     + termin.getPocetak() + " do " + termin.getKraj() + ")");
         }
-        Zadatak zadatak = zadatakRepository.findByGrupaId(prijava.getGrupa().getId())
-                .orElseThrow(() -> ApiException.nijePronadjeno("Za vasu grupu jos nije postavljen zadatak"));
+        Zadatak zadatak = zadatakRepository.findByGrupaId(prijava.getGrupa().getId()).orElseThrow(() -> ApiException.nijePronadjeno("Za vasu grupu jos nije postavljen zadatak!"));
 
         if (resenjeRepository.findByStudentIdAndZadatakId(studentId, zadatak.getId()).isEmpty()) {
             Resenje r = new Resenje();
@@ -103,15 +99,14 @@ public class PolaganjeService {
             throw ApiException.zabranjeno("Termin je istekao u " + termin.getKraj() + ", predaja vise nije moguca");
         }
 
-        String staraPutanja = resenje.getPutanjaFajla();
-        resenje.setPutanjaFajla(fileStorage.sacuvaj(fajl, "resenja"));
+        String novaPutanja = fileStorage.sacuvaj(fajl, "resenja");
+        fileStorage.zameniPosleTransakcije(novaPutanja, resenje.getPutanjaFajla());
+        resenje.setPutanjaFajla(novaPutanja);
         resenje.setNazivFajla(fajl.getOriginalFilename());
         resenje.setPredato(sada);
         resenje.setPoeni(null);
         komentarRepository.deleteAllByResenjeId(resenje.getId());
-        Resenje sacuvano = resenjeRepository.save(resenje);
-        fileStorage.obrisi(staraPutanja);
-        return ResenjeDto.od(sacuvano);
+        return ResenjeDto.od(resenjeRepository.save(resenje));
     }
 
     private static String normalizuj(String indeks) {

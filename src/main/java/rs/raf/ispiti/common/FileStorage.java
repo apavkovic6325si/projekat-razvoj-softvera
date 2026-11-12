@@ -4,18 +4,22 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.UUID;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class FileStorage {
-
     private final Path koren;
 
     public FileStorage(@Value("${app.storage.dir}") String folder) {
@@ -40,7 +44,7 @@ public class FileStorage {
     public String sacuvaj(InputStream sadrzaj, String podfolder) {
         try {
             byte[] bajtovi = sadrzaj.readAllBytes();
-            if (bajtovi.length < 4 || bajtovi[0] != 'P' || bajtovi[1] != 'K') {
+            if (!jeIspravanZip(bajtovi)) {
                 throw ApiException.losZahtev("Fajl nije ispravna .zip arhiva");
             }
             String relativna = podfolder + "/" + UUID.randomUUID() + ".zip";
@@ -59,6 +63,32 @@ public class FileStorage {
             throw ApiException.nijePronadjeno("Fajl ne postoji na serveru");
         }
         return new FileSystemResource(putanja);
+    }
+
+    public void zameniPosleTransakcije(String nova, String stara) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            obrisi(stara);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                obrisi(status == STATUS_COMMITTED ? stara : nova);
+            }
+        });
+    }
+
+    private static boolean jeIspravanZip(byte[] bajtovi) {
+        try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(bajtovi))) {
+            int fajlova = 0;
+            while (zip.getNextEntry() != null) {
+                zip.transferTo(OutputStream.nullOutputStream());
+                fajlova++;
+            }
+            return fajlova > 0;
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     public void obrisi(String relativna) {
